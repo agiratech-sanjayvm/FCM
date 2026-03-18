@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Login — Hospital Appointment System</title>
+    <meta name="description" content="Login to the Hospital Appointment System to manage appointments and notifications.">
+    <link rel="stylesheet" href="styles.css">
+    <link rel="manifest" href="manifest.json">
+    <link rel="icon" href="https://cdn-icons-png.flaticon.com/512/182/182836.png">
+</head>
+<body>
+    <div class="login-container">
+        <div class="card login-card">
+            <div class="logo-large">🏥</div>
+            <h1>Hospital Portal</h1>
+            <p class="subtitle">Sign in to manage appointments</p>
+
+            <div id="login-error" class="login-error"></div>
+
+            <form id="login-form">
+                <div class="form-group">
+                    <label for="email">Email Address</label>
+                    <input type="email" id="email" class="form-input" placeholder="Enter your email" required autocomplete="email">
+                </div>
+
+                <div class="form-group">
+                    <label for="password">Password</label>
+                    <input type="password" id="password" class="form-input" placeholder="Enter your password" required autocomplete="current-password">
+                </div>
+
+                <button type="submit" id="btn-login" class="btn btn-primary btn-full btn-lg">
+                    🔐 Sign In
+                </button>
+            </form>
+
+            <div class="login-footer">
+                <p style="margin-bottom: 0.75rem;">Demo Credentials:</p>
+                <p>Patient: <code>alice@example.com</code> / <code>password123</code></p>
+                <p>Doctor: <code>drsmith@example.com</code> / <code>doctor123</code></p>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE = (window.location.port === '8080' && !window.location.hostname.includes('ngrok'))
+            ? `${window.location.protocol}//${window.location.hostname}:8000`
+            : window.location.origin;
+        const form = document.getElementById('login-form');
+        const errorEl = document.getElementById('login-error');
+        const btnLogin = document.getElementById('btn-login');
+
+        // Redirect if already logged in
+        const existingUser = sessionStorage.getItem('user');
+        if (existingUser) {
+            const user = JSON.parse(existingUser);
+            window.location.href = user.role === 'DOCTOR' ? 'doctor-dashboard.html' : 'patient-dashboard.html';
+        }
+
+        form.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            errorEl.style.display = 'none';
+
+            const email = document.getElementById('email').value.trim();
+            const password = document.getElementById('password').value;
+
+            btnLogin.disabled = true;
+            btnLogin.innerHTML = '<span class="spinner"></span> Signing in...';
+
+            try {
+                const res = await fetch(`${API_BASE}/auth/login`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ email, password }),
+                });
+
+                if (!res.ok) {
+                    const data = await res.json();
+                    throw new Error(data.detail || 'Login failed');
+                }
+
+                const data = await res.json();
+
+                // Store user and token in sessionStorage
+                sessionStorage.setItem('user', JSON.stringify(data));
+                sessionStorage.setItem('token', data.access_token);
+
+                // Redirect based on role
+                if (data.role === 'DOCTOR') {
+                    window.location.href = 'doctor-dashboard.html';
+                } else {
+                    window.location.href = 'patient-dashboard.html';
+                }
+
+            } catch (err) {
+                errorEl.textContent = err.message;
+                errorEl.style.display = 'block';
+                btnLogin.disabled = false;
+                btnLogin.innerHTML = '🔐 Sign In';
+            }
+        });
+    </script>
+</body>
+</html>

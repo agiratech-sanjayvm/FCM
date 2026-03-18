@@ -1,0 +1,9 @@
+run seed  = python -m app.core.init_db
+run backend = uvicorn app.main:app --reload --port 8000
+run frontend = python -m http.server 8080
+
+backend entire end point = http://localhost:8000/docs
+frontend entire end point = http://localhost:8080
+
+both run at same time = http://localhost:8080/dashboard.html
+

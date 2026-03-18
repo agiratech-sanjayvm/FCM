@@ -1,0 +1,523 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Doctor Dashboard — Hospital Portal</title>
+    <meta name="description" content="Doctor dashboard for managing appointment requests and notifications.">
+    <link rel="stylesheet" href="styles.css">
+    <link rel="manifest" href="manifest.json">
+    <link rel="icon" href="https://cdn-icons-png.flaticon.com/512/182/182836.png">
+</head>
+<body>
+    <div class="page-container">
+        <!-- Header -->
+        <header class="app-header">
+            <div class="logo">
+                <span class="logo-icon">🩺</span>
+                <span>Doctor Dashboard</span>
+            </div>
+            <div class="user-info">
+                <div id="notification-bell" class="notification-bell" title="Active Notifications">
+                    🔔
+                    <span id="notif-count" class="notification-count" style="display:none;">0</span>
+                </div>
+                <span id="user-name" class="user-name"></span>
+                <span class="user-role role-doctor">Doctor</span>
+                <button id="btn-logout" class="btn btn-ghost btn-sm">🚪 Logout</button>
+            </div>
+        </header>
+
+        <!-- Toast Container -->
+        <div id="toast-container" class="toast-container"></div>
+
+        <!-- Stats Row -->
+        <div class="stats-row">
+            <div class="stat-card">
+                <div id="stat-notifications" class="stat-value">0</div>
+                <div class="stat-label">Active Notifications</div>
+            </div>
+            <div class="stat-card">
+                <div id="stat-pending" class="stat-value">0</div>
+                <div class="stat-label">Pending Queue</div>
+            </div>
+            <div class="stat-card">
+                <div id="stat-accepted" class="stat-value">0</div>
+                <div class="stat-label">My Accepted</div>
+            </div>
+        </div>
+
+        <!-- Main Content -->
+        <div class="grid-2">
+            <!-- Notifications Panel -->
+            <div class="card">
+                <div class="card-title">
+                    <span class="icon">🔔</span>
+                    Appointment Notifications
+                </div>
+                <div id="notifications-list" class="list">
+                    <div class="empty-state">
+                        <div class="icon">🔕</div>
+                        <p>No active notifications</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Pending Queue -->
+            <div class="card">
+                <div class="card-title">
+                    <span class="icon">⏳</span>
+                    Pending Appointment Queue
+                </div>
+                <div id="pending-list" class="list">
+                    <div class="empty-state">
+                        <div class="icon">✨</div>
+                        <p>Queue is empty — all caught up!</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Accepted Appointments -->
+        <div class="card" style="margin-top: 1.5rem;">
+            <div class="card-title">
+                <span class="icon">✅</span>
+                My Accepted Appointments
+            </div>
+            <div id="accepted-list" class="list">
+                <div class="empty-state">
+                    <div class="icon">📋</div>
+                    <p>No accepted appointments yet</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- FCM Status -->
+        <div class="card" style="margin-top: 1.5rem;">
+            <div class="card-title">
+                <span class="icon">📡</span>
+                Notification Status
+            </div>
+            <div id="notif-status" style="color: var(--text-muted); font-size: 0.9rem;">
+                Initializing push notifications...
+            </div>
+            <div id="token-display" style="margin-top: 0.5rem; font-size: 0.7rem; color: var(--text-dim); word-break: break-all;"></div>
+        </div>
+    </div>
+
+    <!-- Firebase Scripts -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+        import { getMessaging, getToken, onMessage } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-messaging.js";
+
+        // ── Auth Gate ──────────────────────────────────────────────────
+        const userData = sessionStorage.getItem('user');
+        if (!userData) { window.location.href = 'login.html'; }
+        const currentUser = JSON.parse(userData);
+        if (currentUser.role !== 'DOCTOR') { window.location.href = 'patient-dashboard.html'; }
+
+        document.getElementById('user-name').textContent = currentUser.name;
+
+        const API_BASE = (window.location.port === '8080' && !window.location.hostname.includes('ngrok'))
+            ? `${window.location.protocol}//${window.location.hostname}:8000`
+            : window.location.origin;
+        const TOKEN = sessionStorage.getItem('token');
+        let messaging = null;
+
+        // ── API Helper ────────────────────────────────────────────────
+        async function apiFetch(endpoint, options = {}) {
+            const url = endpoint.startsWith('http') ? endpoint : `${API_BASE}${endpoint}`;
+            const headers = {
+                ...options.headers,
+                'Authorization': `Bearer ${TOKEN}`
+            };
+            const res = await fetch(url, { ...options, headers });
+            if (res.status === 401) { logout(); }
+            return res;
+        }
+
+        // ── DOM References ─────────────────────────────────────────────
+        const DOM = {
+            btnLogout: document.getElementById('btn-logout'),
+            notificationsList: document.getElementById('notifications-list'),
+            pendingList: document.getElementById('pending-list'),
+            acceptedList: document.getElementById('accepted-list'),
+            notifStatus: document.getElementById('notif-status'),
+            tokenDisplay: document.getElementById('token-display'),
+            toastContainer: document.getElementById('toast-container'),
+            notifCount: document.getElementById('notif-count'),
+            statNotifications: document.getElementById('stat-notifications'),
+            statPending: document.getElementById('stat-pending'),
+            statAccepted: document.getElementById('stat-accepted'),
+        };
+
+        // ── Initialize ────────────────────────────────────────────────
+        async function init() {
+            try {
+                const configRes = await fetch(`${API_BASE}/config`);
+                const { vapidKey } = await configRes.json();
+
+                const firebaseConfig = {
+                    apiKey: "AIzaSyBH78ReQl2cYXl8GQrxrHdv6sD7XrxUgiQ",
+                    authDomain: "hospital-app-db.firebaseapp.com",
+                    projectId: "hospital-app-db",
+                    storageBucket: "hospital-app-db.firebasestorage.app",
+                    messagingSenderId: "1001387124445",
+                    appId: "1:1001387124445:web:29fcd53656252e2867dd34",
+                    measurementId: "G-CLEXPZ4P0P"
+                };
+
+                const firebaseApp = initializeApp(firebaseConfig);
+                messaging = getMessaging(firebaseApp);
+
+                const registration = await navigator.serviceWorker.register('./firebase-messaging-sw.js');
+                console.log('Service Worker registered:', registration);
+
+                await setupMessaging(vapidKey, registration);
+
+                // Initialize BroadcastChannel
+                const fcmSyncChannel = new BroadcastChannel('fcm_notification_sync');
+                const processedMessageIds = new Set();
+
+                // Listen for Broadcast Channel Messages (when tab is hidden)
+                fcmSyncChannel.onmessage = (event) => {
+                    const payload = event.data;
+                    console.log('[Hidden Tab] Sync Notification received via Broadcast:', payload);
+                    
+                    // Prevent duplicate processing
+                    if (payload.messageId && processedMessageIds.has(payload.messageId)) return;
+                    if (payload.messageId) processedMessageIds.add(payload.messageId);
+                    
+                    // Update UI silently
+                    refreshAll();
+                };
+
+                // Listen for foreground messages
+                onMessage(messaging, (payload) => {
+                    console.log('FCM message:', payload);
+                    
+                    // Prevent duplicate processing
+                    if (payload.messageId && processedMessageIds.has(payload.messageId)) return;
+                    if (payload.messageId) processedMessageIds.add(payload.messageId);
+
+                    const title = payload.notification?.title || 'Hospital Update';
+                    const body = payload.notification?.body || 'You have a new update.';
+                    showToast(`${title}: ${body}`, 'info');
+
+                    // Broadcast the payload to all other hidden tabs
+                    fcmSyncChannel.postMessage(payload);
+
+                    if (Notification.permission === 'granted') {
+                        navigator.serviceWorker.ready.then(registration => {
+                            registration.showNotification(title, {
+                                body: body,
+                                icon: 'https://cdn-icons-png.flaticon.com/512/182/182836.png',
+                                vibrate: [200, 100, 200],
+                                tag: 'hospital-notif-' + Date.now()
+                            });
+                        });
+                    }
+
+                    // Refresh data immediately
+                    refreshAll();
+                });
+
+                // Start polling
+                refreshAll();
+                setInterval(refreshAll, 3000);
+
+                // Events
+                DOM.btnLogout.onclick = logout;
+
+            } catch (err) {
+                console.error('Init error:', err);
+                DOM.notifStatus.innerHTML = `<span style="color: var(--accent);">Error: ${err.message}</span>`;
+            }
+        }
+
+        async function setupMessaging(vapidKey, registration) {
+            try {
+                // On mobile, permission requests often MUST be triggered via a button click (user gesture).
+                // If it fails on page load, the user can use the "Re-register" button.
+                console.log('Requesting notification permission...');
+                DOM.notifStatus.textContent = 'Requesting permission...';
+                
+                const permission = await Notification.requestPermission();
+                console.log('Permission status:', permission);
+
+                if (permission === 'granted') {
+                    // CRITICAL: On mobile, we MUST pass the serviceWorkerRegistration to getToken
+                    const token = await getToken(messaging, { 
+                        vapidKey: vapidKey,
+                        serviceWorkerRegistration: registration 
+                    });
+                    
+                    if (token) {
+                        console.log('FCM Token generated:', token);
+                        await registerToken(token);
+                        DOM.notifStatus.innerHTML = `<span style="color: var(--success);">✅ Push notifications active</span>`;
+                        DOM.tokenDisplay.textContent = `Token: ${token.substring(0, 30)}...`;
+                    } else {
+                        console.warn('No FCM token received.');
+                        DOM.notifStatus.innerHTML = `<span style="color: var(--warning);">⚠️ Token generation failed. Try again.</span>`;
+                    }
+                } else {
+                    console.warn('Notification permission denied.');
+                    DOM.notifStatus.innerHTML = `<span style="color: var(--warning);">⚠️ Notifications blocked — enable in browser settings</span>`;
+                }
+            } catch (err) {
+                console.error('Messaging setup error:', err);
+                DOM.notifStatus.innerHTML = `<span style="color: var(--accent);">Error: ${err.message}</span>`;
+            }
+        }
+
+        async function registerToken(token) {
+            await apiFetch(`/devices/register`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ token }),
+            });
+        }
+
+        // ── Data Refresh ───────────────────────────────────────────────
+        function updateDOMList(container, items, idPrefix, emptyStateHtml, renderItemHtml) {
+            if (items.length === 0) {
+                if (!container.querySelector('.empty-state')) {
+                    container.innerHTML = emptyStateHtml;
+                } else {
+                    Array.from(container.children).forEach(child => {
+                        if (!child.classList.contains('empty-state')) child.remove();
+                    });
+                }
+                return;
+            }
+
+            const emptyState = container.querySelector('.empty-state');
+            if (emptyState) emptyState.remove();
+
+            const newIds = new Set(items.map(item => `${idPrefix}-${item.id}`));
+
+            // Remove existing children that are NOT in the new items
+            Array.from(container.children).forEach(child => {
+                if (child.id && child.id.startsWith(idPrefix) && !newIds.has(child.id)) {
+                    // Start removing them smoothly
+                    if (child.style.opacity !== '0') {
+                        child.style.transition = 'all 0.3s ease-out';
+                        child.style.opacity = '0';
+                        child.style.transform = 'scale(0.95)';
+                        setTimeout(() => {
+                            if (child.parentNode) child.remove();
+                        }, 300);
+                    }
+                }
+            });
+
+            // Iterate over the new items, update or add
+            items.forEach((item, index) => {
+                const id = `${idPrefix}-${item.id}`;
+                let el = document.getElementById(id);
+                
+                // If the element doesn't exist, create it anew
+                if (!el) {
+                    const temp = document.createElement('div');
+                    temp.innerHTML = renderItemHtml(item, id).trim();
+                    el = temp.firstChild;
+                    el.style.transition = 'all 0.3s ease-out';
+                    el.style.opacity = '0';
+                    el.style.transform = 'translateY(10px)';
+                    
+                    // Always append new elements to the end for now. We can sort them later if necessary
+                    container.appendChild(el);
+
+                    requestAnimationFrame(() => {
+                        el.style.opacity = '1';
+                        el.style.transform = 'translateY(0)';
+                    });
+                } else {
+                    // Update only if it's completely different to avoid dropping focus/loading states
+                    // Easiest seamless way is not replacing the parent div entirely
+                    // For buttons that are disabled from accepting, we CANNOT override their HTML or they will lose loading state.
+                    const isAccepting = el.querySelector('button.btn-accept') && el.querySelector('button.btn-accept').disabled;
+
+                    if (!isAccepting) {
+                        const temp = document.createElement('div');
+                        temp.innerHTML = renderItemHtml(item, id).trim();
+                        const newEl = temp.firstChild;
+                        
+                        // Copy innerHTML over only if changed, while preserving the wrapper
+                        if (el.innerHTML !== newEl.innerHTML) {
+                           el.innerHTML = newEl.innerHTML;
+                        }
+                    }
+                }
+            });
+
+            // Ensure order matches the incoming array (crucial for sorting, but avoid moving things unnecessarily if they are already in order)
+            // Sorting can sometimes cause browser layout thrashing if done on every tick.
+            let currentNodes = Array.from(container.children).filter(n => n.id && n.id.startsWith(idPrefix));
+            for (let i = 0; i < items.length; i++) {
+                const targetId = `${idPrefix}-${items[i].id}`;
+                if (currentNodes[i] && currentNodes[i].id !== targetId) {
+                    const elementToMove = document.getElementById(targetId);
+                    if (elementToMove) {
+                        container.insertBefore(elementToMove, currentNodes[i]);
+                        // Update currentNodes list after DOM mutation
+                        currentNodes = Array.from(container.children).filter(n => n.id && n.id.startsWith(idPrefix));
+                    }
+                }
+            }
+        }
+
+        async function refreshAll() {
+            await Promise.all([refreshNotifications(), refreshAppointments()]);
+        }
+
+        async function refreshNotifications() {
+            try {
+                const res = await apiFetch(`/notifications/`);
+                const notifications = await res.json();
+
+                // Update bell count
+                const count = notifications.length;
+                DOM.statNotifications.textContent = count;
+                if (count > 0) {
+                    DOM.notifCount.textContent = count;
+                    DOM.notifCount.style.display = 'flex';
+                } else {
+                    DOM.notifCount.style.display = 'none';
+                }
+
+                updateDOMList(
+                    DOM.notificationsList,
+                    notifications,
+                    'notif',
+                    `<div class="empty-state"><div class="icon">🔕</div><p>No active notifications</p></div>`,
+                    (n, id) => {
+                        const time = new Date(n.appointment_created_at).toLocaleString();
+                        return `
+                            <div id="${id}" class="list-item" style="border-left: 3px solid var(--accent);">
+                                <div class="list-item-info">
+                                    <div class="list-item-id">Notification #${n.id} • Appointment #${n.appointment_id}</div>
+                                    <div class="list-item-main">👤 ${n.patient_name}</div>
+                                    <div class="list-item-sub">🕐 Requested at ${time}</div>
+                                </div>
+                                <button class="btn btn-success btn-sm btn-accept" onclick="window.acceptAppointment(${n.appointment_id}, this)">
+                                    ✅ Accept
+                                </button>
+                            </div>`.trim();
+                    }
+                );
+
+            } catch (err) {
+                console.error('Notification refresh error:', err);
+            }
+        }
+
+        async function refreshAppointments() {
+            try {
+                const res = await apiFetch(`/appointments-list`);
+                const appointments = await res.json();
+
+                const pending = appointments.filter(a => a.status === 'pending');
+                const myAccepted = appointments.filter(a => a.status === 'accepted' && a.doctor_id === currentUser.id);
+
+                DOM.statPending.textContent = pending.length;
+                DOM.statAccepted.textContent = myAccepted.length;
+
+                updateDOMList(
+                    DOM.pendingList,
+                    pending,
+                    'pending',
+                    `<div class="empty-state"><div class="icon">✨</div><p>Queue is empty — all caught up!</p></div>`,
+                    (a, id) => {
+                        const time = new Date(a.created_at).toLocaleString();
+                        return `
+                            <div id="${id}" class="list-item">
+                                <div class="list-item-info">
+                                    <div class="list-item-id">Appointment #${a.id}</div>
+                                    <div class="list-item-sub">Patient #${a.user_id} • 🕐 ${time}</div>
+                                </div>
+                                <button class="btn btn-doctor btn-sm btn-accept" onclick="window.acceptAppointment(${a.id}, this)">
+                                    ✅ Accept
+                                </button>
+                            </div>`.trim();
+                    }
+                );
+
+                updateDOMList(
+                    DOM.acceptedList,
+                    myAccepted,
+                    'accepted',
+                    `<div class="empty-state"><div class="icon">📋</div><p>No accepted appointments yet</p></div>`,
+                    (a, id) => {
+                        const time = new Date(a.accepted_at).toLocaleString();
+                        return `
+                            <div id="${id}" class="list-item">
+                                <div class="list-item-info">
+                                    <div class="list-item-id">Appointment #${a.id}</div>
+                                    <div class="list-item-sub">Patient #${a.user_id} • Accepted at ${time}</div>
+                                </div>
+                                <span class="badge badge-accepted">Accepted</span>
+                            </div>`.trim();
+                    }
+                );
+
+            } catch (err) {
+                console.error('Appointments refresh error:', err);
+            }
+        }
+
+        // ── Accept Appointment ─────────────────────────────────────────
+        window.acceptAppointment = async function(appointmentId, btnElement) {
+            if (btnElement) {
+                btnElement.disabled = true;
+                btnElement.innerHTML = '<span class="spinner"></span> Accepting...';
+                
+                document.querySelectorAll('button.btn-accept').forEach(btn => {
+                    if (btn.getAttribute('onclick').includes('(' + appointmentId + ',')) {
+                        if (btn !== btnElement) {
+                            btn.disabled = true;
+                            btn.innerHTML = 'Accepting...';
+                        }
+                    }
+                });
+            }
+
+            try {
+                const res = await apiFetch(`/appointments/${appointmentId}/accept`, {
+                    method: 'POST',
+                });
+                const data = await res.json();
+
+                if (res.ok) {
+                    showToast('✅ Appointment accepted! Patient has been notified.', 'success');
+                } else {
+                    showToast('⚠️ ' + (data.detail || 'Could not accept'), 'warning');
+                }
+                refreshAll();
+            } catch (err) {
+                showToast('Connection error: ' + err.message, 'warning');
+                if (btnElement) {
+                    btnElement.disabled = false;
+                    btnElement.innerHTML = '✅ Accept';
+                }
+            }
+        };
+
+        function showToast(message, type = 'info') {
+            const toast = document.createElement('div');
+            toast.className = `toast toast-${type}`;
+            toast.textContent = message;
+            DOM.toastContainer.appendChild(toast);
+            setTimeout(() => toast.remove(), 6000);
+        }
+
+        function logout() {
+            sessionStorage.removeItem('user');
+            window.location.href = 'login.html';
+        }
+
+        init();
+    </script>
+</body>
+</html>

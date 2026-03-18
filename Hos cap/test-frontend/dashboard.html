@@ -1,0 +1,472 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🏥 Hospital Command Center</title>
+    <!-- Modern Typography -->
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700&display=swap" rel="stylesheet">
+    <link rel="manifest" href="manifest.json">
+    <link rel="icon" href="https://cdn-icons-png.flaticon.com/512/182/182836.png">
+    <style>
+        :root {
+            --primary: #4361ee;
+            --secondary: #3f37c9;
+            --doctor: #4cc9f0;
+            --accent: #f72585;
+            --bg: #0f172a;
+            --glass: rgba(255, 255, 255, 0.03);
+            --glass-border: rgba(255, 255, 255, 0.1);
+            --text: #f8fafc;
+        }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { 
+            font-family: 'Outfit', sans-serif; 
+            background: radial-gradient(circle at top left, #1e293b, #0f172a);
+            color: var(--text);
+            min-height: 100vh;
+            padding: 2rem;
+            display: flex;
+            flex-direction: column;
+            gap: 2rem;
+        }
+
+        header {
+            text-align: center;
+            padding-bottom: 2rem;
+            border-bottom: 1px solid var(--glass-border);
+        }
+
+        header h1 { font-size: 2.5rem; letter-spacing: -1px; margin-bottom: 0.5rem; }
+        header p { opacity: 0.6; font-size: 1.1rem; }
+
+        .dashboard {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 2rem;
+            max-width: 1400px;
+            margin: 0 auto;
+            width: 100%;
+        }
+
+        @media (max-width: 1000px) {
+            .dashboard { grid-template-columns: 1fr; }
+        }
+
+        .card {
+            background: var(--glass);
+            backdrop-filter: blur(12px);
+            border: 1px solid var(--glass-border);
+            border-radius: 24px;
+            padding: 2.5rem;
+            box-shadow: 0 4px 60px rgba(0,0,0,0.4);
+            transition: transform 0.3s ease;
+        }
+
+        .card:hover { transform: translateY(-5px); }
+
+        .card h2 { margin-bottom: 1.5rem; display: flex; align-items: center; gap: 0.75rem; font-size: 1.5rem; }
+        .card h2 span { font-size: 2rem; }
+
+        .form-group { margin-bottom: 1.5rem; }
+        label { display: block; margin-bottom: 0.5rem; opacity: 0.8; font-size: 0.9rem; }
+        
+        input, select {
+            width: 100%;
+            padding: 1rem;
+            background: rgba(0,0,0,0.2);
+            border: 1px solid var(--glass-border);
+            border-radius: 12px;
+            color: white;
+            font-family: inherit;
+            font-size: 1rem;
+            transition: all 0.2s;
+        }
+
+        input:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 4px rgba(67, 97, 238, 0.2); }
+
+        .btn {
+            width: 100%;
+            padding: 1rem;
+            border: none;
+            border-radius: 12px;
+            font-weight: 700;
+            cursor: pointer;
+            transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+            font-family: inherit;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.5rem;
+            font-size: 1rem;
+        }
+
+        .btn-primary { background: var(--primary); color: white; }
+        .btn-primary:hover { background: var(--secondary); transform: scale(1.02); }
+        .btn-primary:active { transform: scale(0.98); }
+
+        .btn-doctor { background: var(--doctor); color: #1e293b; }
+        .btn-doctor:hover { filter: brightness(1.1); transform: scale(1.02); }
+
+        .status-badge {
+            padding: 0.4rem 0.8rem;
+            border-radius: 99px;
+            font-size: 0.75rem;
+            font-weight: 700;
+            text-transform: uppercase;
+        }
+        .status-pending { background: rgba(234, 179, 8, 0.2); color: #eab308; border: 1px solid rgba(234, 179, 8, 0.3); }
+        .status-accepted { background: rgba(34, 197, 94, 0.2); color: #22c55e; border: 1px solid rgba(34, 197, 94, 0.3); }
+
+        .list { margin-top: 1.5rem; display: flex; flex-direction: column; gap: 1rem; }
+        .item {
+            background: rgba(0,0,0,0.2);
+            padding: 1.25rem;
+            border-radius: 16px;
+            border: 1px solid var(--glass-border);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .item-info { display: flex; flex-direction: column; gap: 0.25rem; }
+        .item-id { font-size: 0.75rem; opacity: 0.5; }
+        .item-time { font-size: 0.85rem; opacity: 0.8; }
+
+        #logs {
+            background: var(--glass);
+            border: 1px solid var(--glass-border);
+            border-radius: 16px;
+            padding: 1.5rem;
+            font-family: monospace;
+            font-size: 0.85rem;
+            max-height: 200px;
+            overflow-y: auto;
+            max-width: 1400px;
+            margin: 0 auto;
+            width: 100%;
+        }
+
+        .log-entry { margin-bottom: 0.5rem; padding-left: 1rem; border-left: 2px solid var(--primary); }
+        .log-time { opacity: 0.4; margin-right: 0.5rem; }
+
+        .notification-info {
+            background: linear-gradient(90deg, var(--accent), var(--primary));
+            padding: 1rem;
+            border-radius: 12px;
+            margin-bottom: 1.5rem;
+            font-size: 0.9rem;
+            font-weight: 600;
+            display: none;
+        }
+    </style>
+</head>
+<body>
+
+    <header>
+        <h1>🏥 Hospital Command Center</h1>
+        <p>Unified Dashboard for Patients and Doctors</p>
+    </header>
+
+    <div class="dashboard">
+        <!-- Patient Section -->
+        <section class="card">
+            <h2><span>👤</span> Patient Portal</h2>
+            <div id="notification-prompt" class="notification-info"></div>
+            
+            <div class="form-group">
+                <label>Active User</label>
+                <select id="patient-select">
+                    <!-- Loaded dynamically -->
+                </select>
+            </div>
+
+            <button id="btn-create" class="btn btn-primary" style="margin-bottom: 1rem;">➕ Create New Appointment</button>
+            <button id="btn-register" class="btn btn-doctor" style="background: rgba(255,255,255,0.05); color:white; border: 1px solid var(--glass-border);">📱 Re-register Device for this User</button>
+
+            <div style="margin-top: 1rem; font-size: 0.7rem; opacity: 0.4; word-break: break-all;" id="current-token-display">
+                No active token registered.
+            </div>
+
+            <div class="list" id="patient-appointments">
+                <!-- Appointments will appear here -->
+            </div>
+        </section>
+
+        <!-- Doctor Section -->
+        <section class="card">
+            <h2><span>🩺</span> Doctor Dashboard</h2>
+            
+            <div class="form-group">
+                <label>Active Doctor</label>
+                <select id="doctor-select">
+                    <!-- Loaded dynamically -->
+                </select>
+            </div>
+
+            <div class="list" id="doctor-queue">
+                <!-- Queue entries will appear here -->
+            </div>
+
+            <hr style="margin: 1.5rem 0; opacity: 0.1;">
+            <button id="btn-test-notif" class="btn" style="background: rgba(255,255,255,0.05); color:white; border: 1px solid var(--glass-border); font-size: 0.8rem;">🧪 Send Test Notification to Patient</button>
+        </section>
+    </div>
+
+    <div id="logs">
+        <div class="log-entry"><span class="log-time">[System]</span> Initializing Hospital Command Center...</div>
+    </div>
+
+    <!-- Firebase Scripts -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+        import { getMessaging, getToken, onMessage } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-messaging.js";
+
+        const DOM = {
+            btnCreate: document.getElementById('btn-create'),
+            patientSelect: document.getElementById('patient-select'),
+            doctorSelect: document.getElementById('doctor-select'),
+            patientList: document.getElementById('patient-appointments'),
+            doctorList: document.getElementById('doctor-queue'),
+            logs: document.getElementById('logs'),
+            notifInfo: document.getElementById('notification-prompt'),
+            btnRegister: document.getElementById('btn-register'),
+            tokenDisplay: document.getElementById('current-token-display'),
+            btnTestNotif: document.getElementById('btn-test-notif')
+        };
+
+        // ── Auth Gate ──────────────────────────────────────────────────
+        const userData = sessionStorage.getItem('user');
+        if (!userData) { window.location.href = 'login.html'; }
+        const currentUser = JSON.parse(userData);
+
+        const API_BASE = (window.location.port === '8080' && !window.location.hostname.includes('ngrok'))
+            ? `${window.location.protocol}//${window.location.hostname}:8000`
+            : window.location.origin;
+
+        // 1. Initial configuration
+        async function init() {
+            try {
+                const configRes = await fetch(`${API_BASE}/config`);
+                const { vapidKey } = await configRes.json();
+                
+                if (!vapidKey) {
+                    log('Warning: No VAPID key found in backend config.', 'accent');
+                }
+
+                log('Connecting to Firebase...');
+                const firebaseConfig = {
+                    apiKey: "AIzaSyBH78ReQl2cYXl8GQrxrHdv6sD7XrxUgiQ",
+                    authDomain: "hospital-app-db.firebaseapp.com",
+                    projectId: "hospital-app-db",
+                    storageBucket: "hospital-app-db.firebasestorage.app",
+                    messagingSenderId: "1001387124445",
+                    appId: "1:1001387124445:web:29fcd53656252e2867dd34",
+                    measurementId: "G-CLEXPZ4P0P"
+                };
+
+                const firebaseApp = initializeApp(firebaseConfig);
+                const messaging = getMessaging(firebaseApp);
+
+                // Explicitly register service worker to prevent 404s
+                if ('serviceWorker' in navigator) {
+                    navigator.serviceWorker.register('./firebase-messaging-sw.js')
+                        .then((reg) => log('Service Worker registered for scope: ' + reg.scope, 'primary'))
+                        .catch((err) => log('Service Worker registration failed: ' + err.message, 'accent'));
+                }
+
+                // Load Users from DB (Wait until dropdown is filled!)
+                await loadUsers();
+
+                // Setup Messaging (Now it can safely get the current userId)
+                await setupMessaging(messaging, vapidKey);
+
+                // Foreground notifications (Listen even if focused)
+                onMessage(messaging, (payload) => {
+                    log('🔔 FCM Broadcast: ' + payload.notification.title, 'doctor');
+                    showInAppNotification(payload.notification.title, payload.notification.body);
+                });
+
+                // Start polling for updates
+                setInterval(refreshData, 3000);
+                refreshData();
+
+                DOM.btnCreate.onclick = createAppointment;
+                DOM.btnRegister.onclick = async () => {
+                   log('Manual Registration Triggered...');
+                   await setupMessaging(messaging, vapidKey);
+                };
+
+                DOM.btnTestNotif.onclick = async () => {
+                   const userId = DOM.patientSelect.value;
+                   log('Triggering Test Notification for User ' + userId + '...');
+                   await fetch(`${API_BASE}/test-notification/${userId}`, { method: 'POST' });
+                };
+
+                // Handle user switch
+                DOM.patientSelect.onchange = async () => {
+                    log('Switching user context...');
+                    const userId = DOM.patientSelect.value;
+                    const token = await getToken(messaging, { vapidKey });
+                    if (token) await registerToken(userId, token);
+                    refreshData();
+                };
+
+            } catch (err) {
+                log('Initialization Error: ' + err.message, 'accent');
+            }
+        }
+
+        async function loadUsers() {
+            log('Fetching users from database...');
+            const res = await fetch(`${API_BASE}/users`);
+            const users = await res.json();
+            
+            // Patients
+            DOM.patientSelect.innerHTML = users
+                .filter(u => u.role === 'USER')
+                .map(u => `<option value="${u.id}">${u.name} (ID: ${u.id})</option>`)
+                .join('');
+            
+            // Doctors
+            DOM.doctorSelect.innerHTML = users
+                .filter(u => u.role === 'DOCTOR')
+                .map(u => `<option value="${u.id}">${u.name} (ID: ${u.id})</option>`)
+                .join('');
+                
+            log(`Loaded ${users.length} users successfully.`, 'primary');
+        }
+
+        async function setupMessaging(messaging, vapidKey) {
+            try {
+                log('Requesting notification permissions...');
+                const permission = await Notification.requestPermission();
+                
+                if (permission === 'granted') {
+                    const token = await getToken(messaging, { vapidKey });
+                    if (token) {
+                        log('FCM Token generated: ' + token.substring(0, 15) + '...');
+                        DOM.tokenDisplay.innerHTML = `Token Active: <span style="opacity:1">${token.substring(0, 30)}...</span>`;
+                        const userId = DOM.patientSelect.value;
+                        await registerToken(userId, token);
+                    }
+                } else if (permission === 'denied') {
+                    log('Notification permission denied by user.', 'accent');
+                    alert('Notifications are blocked. Please click the Lock icon in the address bar and set Notifications to "Allow".');
+                }
+
+            } catch (err) {
+                if (err.code === 'messaging/permission-blocked') {
+                    log('Error: Permissions are blocked in browser settings.', 'accent');
+                    alert('IMPORTANT: Notifications are blocked by your browser settings. Please click the Lock icon in the address bar and enable Notifications.');
+                } else {
+                    log('Messaging Setup Error: ' + err.message, 'accent');
+                }
+            }
+        }
+
+        async function registerToken(userId, token) {
+            await fetch(`${API_BASE}/devices/register?user_id=${userId}`, {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ token })
+            });
+            log('FCM Token registered with backend for User ' + userId);
+        }
+
+        async function createAppointment() {
+            const userId = DOM.patientSelect.value;
+            DOM.btnCreate.disabled = true;
+            DOM.btnCreate.innerText = '⌛ Creating...';
+            
+            try {
+                const res = await fetch(`${API_BASE}/appointments/?user_id=${userId}`, { method: 'POST' });
+                const data = await res.json();
+                log('Appointment created: ID ' + data.id);
+                refreshData();
+            } finally {
+                DOM.btnCreate.disabled = false;
+                DOM.btnCreate.innerText = '➕ Create New Appointment';
+            }
+        }
+
+        async function acceptAppointment(id) {
+            const drId = DOM.doctorSelect.value;
+            log('Accepting ID ' + id + ' as Doctor ' + drId + '...');
+            
+            try {
+                const res = await fetch(`${API_BASE}/appointments/${id}/accept?doctor_id=${drId}`, { method: 'POST' });
+                const data = await res.json();
+                if (res.ok) {
+                    log('Accepted: ' + data.message, 'primary');
+                } else {
+                    log('Error: ' + data.detail, 'accent');
+                }
+                refreshData();
+            } catch (err) {
+                log('Accept Error: ' + err.message, 'accent');
+            }
+        }
+
+        async function refreshData() {
+            const res = await fetch(`${API_BASE}/appointments`);
+            const appointments = await res.json();
+            
+            const userId = DOM.patientSelect.value;
+            
+            // Update Patient List
+            const pHtml = appointments
+                .filter(a => a.user_id == userId)
+                .map(renderItem)
+                .join('');
+            DOM.patientList.innerHTML = pHtml || '<p style="opacity:0.4;text-align:center;">No appointments found.</p>';
+
+            // Update Doctor Queue
+            const dHtml = appointments
+                .filter(a => a.status === 'pending')
+                .map(a => renderItem(a, true))
+                .join('');
+            DOM.doctorList.innerHTML = dHtml || '<p style="opacity:0.4;text-align:center;">Queue is empty.</p>';
+        }
+
+        function renderItem(a, isDoctor = false) {
+            const time = new Date(a.created_at).toLocaleTimeString();
+            return `
+                <div class="item">
+                    <div class="item-info">
+                        <div class="item-id">ID #${a.id}</div>
+                        <div class="item-time">🕐 Created at ${time}</div>
+                        ${a.status === 'accepted' ? `<div style="font-size:0.8rem; margin-top:0.3rem">👨‍⚕️ Dr. ID ${a.doctor_id} • ${new Date(a.accepted_at).toLocaleTimeString()}</div>`: ''}
+                    </div>
+                    <div>
+                        ${(isDoctor && a.status === 'pending') 
+                            ? `<button class="btn btn-doctor" onclick="window.acceptApp(${a.id})">✅ Accept</button>` 
+                            : `<span class="status-badge status-${a.status}">${a.status}</span>`
+                        }
+                    </div>
+                </div>
+            `;
+        }
+
+        function log(msg, colorId = '') {
+            const entry = document.createElement('div');
+            entry.className = 'log-entry';
+            if (colorId) entry.style.borderColor = `var(--${colorId})`;
+            entry.innerHTML = `<span class="log-time">[${new Date().toLocaleTimeString()}]</span> ${msg}`;
+            DOM.logs.prepend(entry);
+        }
+
+        function showInAppNotification(title, body) {
+            DOM.notifInfo.innerText = `🎁 ${title}: ${body}`;
+            DOM.notifInfo.style.display = 'block';
+            setTimeout(() => { DOM.notifInfo.style.display = 'none'; }, 8000);
+        }
+
+        // Global exposing
+        window.acceptApp = acceptAppointment;
+
+        init();
+    </script>
+</body>
+</html>

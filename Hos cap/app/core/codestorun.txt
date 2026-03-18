@@ -1,0 +1,26 @@
+run create tables = python -m app.core.init_db
+run reset tables = python -m app.core.init_db --reset
+run seed  = python -m app.core.seed
+run backend = uvicorn app.main:app --reload --port 8000
+run frontend = python -m http.server 8080
+
+backend entire end point = http://localhost:8000/docs
+frontend entire end point = http://localhost:8080
+
+log-in = http://localhost:8080/login.html
+patient-dashboard = http://localhost:8080/patient-dashboard.html
+docto-dashboard = http://localhost:8080/doctor-dashboard.html
+
+both run at same time = http://localhost:8080/dashboard.html
+
+ngrok endpoint = https://loving-unfactorable-mei.ngrok-free.dev
+
+ngrok login = https://loving-unfactorable-mei.ngrok-free.dev/login.html
+ngrok patient-dashboard = https://loving-unfactorable-mei.ngrok-free.dev/patient-dashboard.html
+ngrok doctor-dashboard = https://loving-unfactorable-mei.ngrok-free.dev/doctor-dashboard.html
+
+
+
+flow by logging in as Alice Patient (alice@example.com / password123) 
+to create an appointment, and then as Dr. Smith 
+(drsmith@example.com / doctor123) to accept it.

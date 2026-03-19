@@ -200,31 +200,37 @@
                     if (payload.messageId && processedMessageIds.has(payload.messageId)) return;
                     if (payload.messageId) processedMessageIds.add(payload.messageId);
 
-                    const title = payload.notification?.title || 'Hospital Update';
-                    const body = payload.notification?.body || 'You have a new update.';
-                    showToast(`${title}: ${body}`, 'info');
-
                     // Broadcast the payload to all other hidden tabs
                     fcmSyncChannel.postMessage(payload);
 
-                    if (Notification.permission === 'granted') {
-                        navigator.serviceWorker.ready.then(registration => {
-                            registration.showNotification(title, {
-                                body: body,
-                                icon: 'https://cdn-icons-png.flaticon.com/512/182/182836.png',
-                                vibrate: [200, 100, 200],
-                                tag: 'hospital-notif-' + Date.now()
+                    if (payload.notification) {
+                        const title = payload.notification.title || 'Hospital Update';
+                        const body = payload.notification.body || 'You have a new update.';
+                        showToast(`${title}: ${body}`, 'info');
+
+                        if (Notification.permission === 'granted') {
+                            navigator.serviceWorker.ready.then(registration => {
+                                registration.showNotification(title, {
+                                    body: body,
+                                    icon: 'https://cdn-icons-png.flaticon.com/512/182/182836.png',
+                                    vibrate: [200, 100, 200],
+                                    tag: 'hospital-notif-' + Date.now()
+                                });
                             });
-                        });
+                        }
+                    } else if (payload.data && payload.data.type === 'appointment_resolved') {
+                        console.log("Appointment resolved, silently updating UI.");
+                    } else {
+                        console.log("Other silent data payload received.");
                     }
 
                     // Refresh data immediately
                     refreshAll();
                 });
 
-                // Start polling
+                // Initial load
                 refreshAll();
-                setInterval(refreshAll, 3000);
+                // setInterval(refreshAll, 3000); // Polling disabled, relying entirely on FCM pushes
 
                 // Events
                 DOM.btnLogout.onclick = logout;

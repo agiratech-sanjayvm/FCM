@@ -32,7 +32,8 @@ class NotificationTracker:
         self.writer.writerow([
             "test_id", "appointment_id", "notification_id", 
             "sender_type", "receiver_type", "receiver_id", 
-            "status", "sent_timestamp", "received_timestamp", "latency_ms"
+            "status", "sent_timestamp", "received_timestamp", "latency_ms",
+            "failure_reason", "comment"
         ])
         
         self.test_id = os.path.basename(self.filename).split('.')[0]
@@ -63,7 +64,7 @@ class NotificationTracker:
                 pass
         return os.path.join(TEST_DIR, f"{CSV_PREFIX}{max_num + 1}.csv")
 
-    async def log_notification(self, appt_id, notif_id, sender_type, receiver_type, receiver_id, status, sent_ts, recv_ts, latency):
+    async def log_notification(self, appt_id, notif_id, sender_type, receiver_type, receiver_id, status, sent_ts, recv_ts, latency, failure_reason="", comment=""):
         async with self.lock:
             # Formatting timestamps
             sent_str = datetime.fromtimestamp(sent_ts).strftime('%H:%M:%S.%f')[:-3] if sent_ts else ""
@@ -71,7 +72,8 @@ class NotificationTracker:
             
             self.writer.writerow([
                 self.test_id, appt_id, notif_id, sender_type, receiver_type, receiver_id,
-                status, sent_str, recv_str, round(latency * 1000, 2) if latency else ""
+                status, sent_str, recv_str, round(latency * 1000, 2) if latency else "",
+                failure_reason, comment
             ])
             
             self.metrics["total_sent"] += 1
@@ -145,12 +147,12 @@ class AppointmentSystemCore:
         
         # Simulate an FCM Token "NotRegistered" or Network Drop
         if random.random() < FCM_FAILURE_RATE:
-            await self.tracker.log_notification(appt_id, notif_id, "system", "doctor", doc_id, "FAILED", sent_ts, None, None)
+            await self.tracker.log_notification(appt_id, notif_id, "system", "doctor", doc_id, "FAILED", sent_ts, None, None, failure_reason="FCM Token NotRegistered / Network Drop", comment="Initial dispatch failed")
             await self.tracker.record_metric("missed_notifications")
             return
 
         recv_ts = sent_ts + latency
-        await self.tracker.log_notification(appt_id, notif_id, "system", "doctor", doc_id, "RECEIVED", sent_ts, recv_ts, latency)
+        await self.tracker.log_notification(appt_id, notif_id, "system", "doctor", doc_id, "RECEIVED", sent_ts, recv_ts, latency, comment="Initial dispatch successful")
         
         # Doctor Simulation: Random chance that this specific doctor sees the notification and hits "Accept" quickly
         if random.random() < 0.05:  
@@ -183,12 +185,12 @@ class AppointmentSystemCore:
             task.add_done_callback(self.background_tasks.discard)
             
             if random.random() < FCM_FAILURE_RATE:
-                await self.tracker.log_notification(appt_id, notif_id, "doctor", "patient", patient_id, "FAILED", sent_ts, None, None)
+                await self.tracker.log_notification(appt_id, notif_id, "doctor", "patient", patient_id, "FAILED", sent_ts, None, None, failure_reason="FCM Token NotRegistered / Network Drop", comment="Patient confirmation failed")
                 await self.tracker.record_metric("missed_notifications")
                 await self.tracker.record_metric("patient_notify_failed")
             else:
                 recv_ts = sent_ts + latency
-                await self.tracker.log_notification(appt_id, notif_id, "doctor", "patient", patient_id, "RECEIVED", sent_ts, recv_ts, latency)
+                await self.tracker.log_notification(appt_id, notif_id, "doctor", "patient", patient_id, "RECEIVED", sent_ts, recv_ts, latency, comment="Patient confirmation successful")
         else:
             # Race condition caught: Doctor tried to accept an already accepted appointment
             await self.tracker.record_metric("duplicate_accepts")
@@ -206,11 +208,11 @@ class AppointmentSystemCore:
         await asyncio.sleep(latency)
         
         if random.random() < FCM_FAILURE_RATE:
-            await self.tracker.log_notification(appt_id, notif_id, "system", "doctor_invalidate", doc_id, "FAILED", sent_ts, None, None)
+            await self.tracker.log_notification(appt_id, notif_id, "system", "doctor_invalidate", doc_id, "FAILED", sent_ts, None, None, failure_reason="FCM Token NotRegistered / Network Drop", comment="Invalidation payload dropped")
             await self.tracker.record_metric("invalidate_failed")
         else:
             recv_ts = sent_ts + latency
-            await self.tracker.log_notification(appt_id, notif_id, "system", "doctor_invalidate", doc_id, "RECEIVED", sent_ts, recv_ts, latency)
+            await self.tracker.log_notification(appt_id, notif_id, "system", "doctor_invalidate", doc_id, "RECEIVED", sent_ts, recv_ts, latency, comment="Invalidation payload successful")
             await self.tracker.record_metric("invalidate_received")
 
 

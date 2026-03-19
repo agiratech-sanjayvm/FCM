@@ -125,8 +125,16 @@ async def resolve_notifications(appointment_id: int) -> None:
     """
     Mark all notifications for a given appointment as RESOLVED.
     Called when any doctor accepts the appointment.
+    Also sends a silent data message to all doctors to remove it from their UI.
     """
     async with AsyncSessionLocal() as db:
+        # Get doctors who received this notification
+        stmt_docs = select(Notification.doctor_id).where(
+            Notification.appointment_id == appointment_id
+        )
+        result_docs = await db.execute(stmt_docs)
+        doctor_ids = [row[0] for row in result_docs.fetchall()]
+
         stmt = (
             update(Notification)
             .where(
@@ -141,6 +149,26 @@ async def resolve_notifications(appointment_id: int) -> None:
             "Resolved %d notifications for appointment_id=%d",
             result.rowcount, appointment_id,
         )
+
+        if doctor_ids:
+            stmt_tokens = select(DeviceToken.token).where(DeviceToken.user_id.in_(doctor_ids))
+            result_tokens = await db.execute(stmt_tokens)
+            tokens = [row[0] for row in result_tokens.fetchall()]
+
+            if tokens:
+                logger.info(
+                    "Sending invalidation data message to %d doctor devices for appointment_id=%d",
+                    len(tokens), appointment_id
+                )
+                for batch_start in range(0, len(tokens), MAX_TOKENS_PER_BATCH):
+                    batch = tokens[batch_start : batch_start + MAX_TOKENS_PER_BATCH]
+                    await _send_batch_with_retry(
+                        db,
+                        title=None,
+                        body=None,
+                        tokens=batch,
+                        data={"type": "appointment_resolved", "appointment_id": str(appointment_id)},
+                    )
 
 
 async def send_appointment_notification(user_id: int) -> None:
@@ -184,10 +212,10 @@ async def _fetch_user_tokens(db: AsyncSession, user_id: int) -> List[str]:
 
 async def _send_batch_with_retry(
     db: AsyncSession,
-    title: str,
-    body: str,
+    title: str | None,
+    body: str | None,
     tokens: List[str],
-    data: dict = None,
+    data: dict | None = None,
 ) -> None:
     """
     Send a multicast message to a batch of tokens with retry logic.
@@ -197,11 +225,10 @@ async def _send_batch_with_retry(
     - Exponential backoff: 1s → 2s → 4s.
     - Invalid/unregistered tokens are removed from DB immediately.
     """
+    notification = messaging.Notification(title=title, body=body) if title or body else None
+
     message = messaging.MulticastMessage(
-        notification=messaging.Notification(
-            title=title,
-            body=body,
-        ),
+        notification=notification,
         data=data,
         tokens=tokens,
     )
@@ -251,7 +278,7 @@ async def _send_batch_with_retry(
             # Prepare retry with only the failed tokens
             tokens = failed_tokens
             message = messaging.MulticastMessage(
-                notification=messaging.Notification(title=title, body=body),
+                notification=notification,
                 data=data,
                 tokens=tokens,
             )

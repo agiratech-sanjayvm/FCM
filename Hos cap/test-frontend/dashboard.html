@@ -284,13 +284,19 @@
 
                 // Foreground notifications (Listen even if focused)
                 onMessage(messaging, (payload) => {
-                    log('🔔 FCM Broadcast: ' + payload.notification.title, 'doctor');
-                    showInAppNotification(payload.notification.title, payload.notification.body);
+                    if (payload.notification) {
+                        log('🔔 FCM Broadcast: ' + payload.notification.title, 'doctor');
+                        showInAppNotification(payload.notification.title, payload.notification.body);
+                    } else if (payload.data && payload.data.type === 'appointment_resolved') {
+                        log('🔇 Silent appointment resolution received', 'accent');
+                    }
+                    // Refresh data whenever any push arrives
+                    refreshData();
                 });
 
-                // Start polling for updates
-                setInterval(refreshData, 3000);
+                // Initial load
                 refreshData();
+                // setInterval(refreshData, 3000); // Polling disabled, relying entirely on FCM pushes
 
                 DOM.btnCreate.onclick = createAppointment;
                 DOM.btnRegister.onclick = async () => {

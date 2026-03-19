@@ -126,48 +126,24 @@ Real-time synchronization using Firebase and `BroadcastChannel` bindings to assu
 how the application know a doctor as accepted a invite and removed it from others
 
 1. How is the event keeping triggering? Is a socket being used here?
-No, WebSockets or Server-Sent Events (SSE) are not being used.
+We use Firebase Cloud Messaging (FCM) to trigger events in real-time. There is no WebSocket or Server-Sent Events (SSE) connection maintained by the backend. Instead, the backend pushes targeted messages through FCM, which acts as the real-time tunnel. The frontend listens to these pushes via `onMessage()` and only fetches fresh data or updates the UI when a relevant Firebase payload arrives.
 
-What you are seeing in the logs (GET /notifications/ and GET /appointments-list) is HTTP Long Polling. In your frontend HTML files (
-
-doctor-dashboard.html
- and 
-
-patient-dashboard.html
-), there are setInterval timers set up that repeatedly make API calls to fetch fresh data:
-
-For the doctor (
-
-doctor-dashboard.html
-):
-
-
-These constant requests every 3 to 5 seconds are what keeps triggering the backend routes and showing up in your logs.
+*(Note: Legacy polling commands like `setInterval(refreshAll, 3000)` have been completely removed to prevent API spam and allow the application to scale.)*
 
 2. How does accepting an appointment remove it from the other doctors' side?
-When a doctor accepts an appointment, a POST request is sent to /appointments/{id}/accept. Here is how the synchronization happens across clients:
+When a doctor accepts an appointment, a POST request is sent to `/appointments/{id}/accept`. Here is how the synchronization happens across clients instantly:
 
-State Change: The appointment's status in the database is changed from pending to accepted.
-Background Resolution: In 
+- **State Change:** The appointment's status in the database is changed from pending to accepted.
+- **Background Resolution:** In `app/routes/appointments.py`, it triggers a background task called `resolve_notifications`.
+- **Silent Invalidation Push:** This task finds all doctors who received the initial active notification and fires a silent, data-only FCM push directly to their devices (e.g., `{"type": "appointment_resolved"}`).
+- **Event-Driven Layout Unmount:** The other doctors' browsers catch this silent data payload via Firebase. Their frontend script parses the event and selectively requests a localized data refresh. The pending appointment is immediately stripped from their queue seamlessly, without triggering an obnoxious visual popup for the user.
 
-app/routes/appointments.py
-, it triggers a background task called resolve_notifications. This function finds all ACTIVE notifications relating to that specific appointment_id for all doctors and changes their status to RESOLVED (or similar).
-The Next Poll: Because all the fast polling is happening in the background (every 3 seconds), the other doctors' browsers will automatically hit GET /notifications/ again within a few seconds.
-Disappearance: The /notifications/ SQL query is strictly designed to only fetch Notification.status == NotificationStatus.ACTIVE. Since the notifications were marked as resolved, the endpoint returns an empty list, and the frontend cleans out the UI and the pending list entirely.
-3. What is the flicker I see in the application when accepting an appointment?
-The "flicker" you are seeing is a direct result of how the DOM is updated combined with the network latency of polling.
+3. Why is there no longer a UI flicker when accepting an appointment?
+Previously, the application relied on HTTP Long Polling which completely wiped and repainted the raw HTML (`.innerHTML`) every 3 seconds via indiscriminate network ticks. This forced the browser to constantly recalculate the layout tree, causing severe visual flashing.
 
-Right now, whenever refreshAll() runs (both on the 3-second interval and immediately after you click "Accept"), it updates the view by completely destroying and replacing the HTML using .innerHTML:
-
-Why it flickers:
-
-When you click ✅ Accept, your browser instantly fires a request to /appointments/{id}/accept.
-As soon as it finishes, you immediately trigger refreshAll() to get the new data.
-When refreshAll() runs, it destroys the current HTML list and paints the new one. Since the browser engine has to parse the new HTML, clear the old DOM nodes, and render the new ones from scratch, it flashes visually.
-To fix the flickering: Instead of hard-replacing the innerHTML on every single network tick, you should:
-
-Compare the incoming data to what is currently rendered and only mutate nodes that actually changed (e.g., using a library like React/Vue).
-If staying with Vanilla JS, add unique IDs strictly mapped to rows (id="appt-12"), and using Javascript, find that specific element and .remove() it just from the DOM rather than refreshing the whole list string.
+Now, the application's UI is strictly **Event-Driven via Firebase**:
+- The browser pauses entirely and only selectively triggers JavaScript DOM updates when a definitive push notification arrives.
+- Furthermore, the frontend utilizes smart DOM manipulation (hunting elements via specific dataset IDs like `id="appt-12"` and smoothly transitioning them to `opacity: 0` before calling `.remove()`) rather than stubbornly destroying and fetching the entire list string. This guarantees a native, zero-flicker experience.
 
 
 

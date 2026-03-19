@@ -29,9 +29,14 @@ messaging.onBackgroundMessage((payload) => {
   // Broadcast to all open tabs
   fcmSyncChannel.postMessage(payload);
 
-  const notificationTitle = payload.notification?.title || "🏥 Hospital Update";
+  if (!payload.notification) {
+      console.log("[SW] Silent data payload received, suppressing popup.");
+      return; 
+  }
+
+  const notificationTitle = payload.notification.title || "🏥 Hospital Update";
   const notificationOptions = {
-    body: payload.notification?.body || "You have a new update in your portal.",
+    body: payload.notification.body || "You have a new update in your portal.",
     icon: "https://cdn-icons-png.flaticon.com/512/182/182836.png",
     data: payload.data,
   };

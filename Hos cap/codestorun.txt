@@ -1,7 +1,24 @@
 run create tables = python -m app.core.init_db
 run reset tables = python -m app.core.init_db --reset
 run seed  = python -m app.core.seed
+
+
+
+to run in single terminal for windows
+
+start run.bat
+
+to run in ubunto
+
+bash run.sh
+
+
+for windows
+
 run backend = uvicorn app.main:app --reload --port 8000
+
+for frontend
+cd test-frontend and then run the below code
 run frontend = python -m http.server 8080
 
 backend entire end point = http://localhost:8000/docs
